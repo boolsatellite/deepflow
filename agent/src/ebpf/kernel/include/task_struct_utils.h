@@ -23,6 +23,7 @@
 #define DF_TASK_STRUCT_UTILS_H
 
 #include <linux/sched.h>
+#include <stdint.h>
 #include <math.h>
 #include "utils.h"
 

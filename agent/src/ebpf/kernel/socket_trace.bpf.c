@@ -21,6 +21,7 @@
 
 #include <arpa/inet.h>
 #include <linux/bpf_perf_event.h>
+#include <stdint.h>
 #include "config.h"
 #include "include/socket_trace.h"
 #include "include/task_struct_utils.h"

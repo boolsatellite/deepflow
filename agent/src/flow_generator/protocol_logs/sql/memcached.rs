@@ -3,7 +3,7 @@ use std::{fmt, str};
 use anyhow::Ok;
 use clap::App;
 use futures::future::ok;
-use serde::{Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 use wasmtime_wasi::preview2::command;
 
 use super::{
@@ -55,23 +55,21 @@ pub struct MemcachedInfo {
     // delete <key> [noreply]\r\n
     pub command: String,
     // length limit of a key is set at 250 characters
-    pub resq_key: String,
+    pub req_key: String,
     //in memcached 1.2.1 and higher, flags may be 32-bits,
     //insteadof 16, but you might want to restrict yourself
     //to 16 bits for compatibility with older versions.
-    pub resq_flags: u16,
+    pub req_flags: u16,
     pub exptime: String,
     //not including the delimiting \r\n
     pub length: String,
-    pub resq_cas_unique: u64,
+    pub req_cas_unique: u64,
     //  optional parameter
     pub noreply: String,
     pub resq_data_block: String,
 
     /*  VALUE <key> <flags> <bytes> [<cas unique>]\r\n
     <data block>\r\n                            */
-    pub resp_key: String,
-    pub resp_flags: u16,
     pub resp_data_len: String,
     pub resp_cas_unique: String,
 
@@ -80,6 +78,7 @@ pub struct MemcachedInfo {
     pub response: String,
     pub request_type: String,
     pub error: String,
+    pub resp_status: L7ResponseStatus,
 
     flag: u8, // TODO: 未知作用
     rrt: u64,
@@ -92,9 +91,10 @@ impl L7ProtocolInfoInterface for MemcachedInfo {
 
     fn merge_log(&mut self, other: &mut L7ProtocolInfo) -> Result<()> {
         if let L7ProtocolInfo::MemCachedInfo(other) = other {
-            self.merge(other)?;
+            return self.merge(other);
         }
         Ok(())
+        //flow_generator::error::Error
     }
 
     fn app_proto_head(&self) -> Option<AppProtoHead> {
@@ -119,8 +119,8 @@ impl MemcachedInfo {
 
 impl fmt::Display for MemcachedInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "resquest: {:?}", self.resquest);
-        write!(f, "response: {:?}", self.response)
+        write!(f, "resquest: {:?}", &self.request);
+        write!(f, "response: {:?}", &self.response)
     }
 }
 
@@ -132,8 +132,8 @@ impl From<MemcachedInfo> for L7ProtocolSendLog {
             EbpfFlags::NONE.bits()
         };
         let log = L7ProtocolSendLog {
-            captured_request_byte: f.resquest.len() as u32,
-            captured_response_byte: f.response.len(),
+            captured_request_byte: f.request.len() as u32,
+            captured_response_byte: f.response.len() as u32,
             req: L7Request {
                 req_type: f.request_type.clone(),
                 resource: f.request.clone(),
@@ -151,11 +151,10 @@ impl From<MemcachedInfo> for L7ProtocolSendLog {
     }
 }
 
-#[derive(Default)]
+#[derive(Serialize, Default)]
 pub struct MemCachedLog {
     info: MemcachedInfo,
-    // #[serde(skip)]
-
+    #[serde(skip)]
     // 用于记录指标数据，后面会说明如何计算
     perf_stats: Option<L7PerfStats>,
     #[serde(skip)]
@@ -199,6 +198,7 @@ mod tests {
     #[test]
     fn check() {}
 }
+
 /*
 // test log parse
 #[cfg(test)]

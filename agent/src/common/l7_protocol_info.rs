@@ -66,7 +66,7 @@ all_protocol_info!(
     HttpInfo(HttpInfo),
     MysqlInfo(MysqlInfo),
     RedisInfo(RedisInfo),
-    MemcachedInfo(MemcachedInfo),
+    MemCachedInfo(MemcachedInfo),
     MongoDBInfo(MongoDBInfo),
     DubboInfo(DubboInfo),
     FastCGIInfo(FastCGIInfo),

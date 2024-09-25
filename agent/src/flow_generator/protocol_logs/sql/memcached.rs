@@ -1,29 +1,19 @@
-use bson::de;
-use chrono::format;
-use serde::{Serialize, Serializer};
-use serde_json::value;
+use serde::Serialize;
 use std::{fmt, str};
 
-use super::{
-    super::{value_is_default, AppProtoHead, L7ResponseStatus, LogMessageType},
-    ObfuscateCache, PostgreInfo,
-};
+use super::super::{AppProtoHead, L7ResponseStatus, LogMessageType};
 
 use crate::{
     common::{
         enums::IpProtocol,
-        flow::{L7PerfStats, L7Protocol, PacketDirection},
+        flow::{L7PerfStats, L7Protocol},
         l7_protocol_info::{L7ProtocolInfo, L7ProtocolInfoInterface},
         l7_protocol_log::{L7ParseResult, L7ProtocolParserInterface, ParseParam},
         meta_packet::EbpfFlags,
     },
-    config::handler::LogParserConfig,
     flow_generator::{
         error::{Error, Result},
-        protocol_logs::{
-            pb_adapter::{L7ProtocolSendLog, L7Request, L7Response},
-            set_captured_byte,
-        },
+        protocol_logs::pb_adapter::{L7ProtocolSendLog, L7Request, L7Response},
     },
 };
 
@@ -107,7 +97,7 @@ impl L7ProtocolInfoInterface for MemcachedInfo {
 }
 
 impl MemcachedInfo {
-    fn merge(&mut self, other: &mut Self) -> Result<()> {
+    fn merge(&mut self, _other: &mut Self) -> Result<()> {
         // self.response = other.response.clone();
         // self.resp_cas_unique = other.resp_cas_unique.clone();
         // self.resp_data_length = other.resp_data_length.clone();
@@ -122,14 +112,14 @@ impl MemcachedInfo {
 
 impl fmt::Display for MemcachedInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "resquest: {:?}", &self.request);
+        write!(f, "resquest: {:?}", &self.request)?;
         write!(f, "response: {:?}", &self.response)
     }
 }
 
 impl From<MemcachedInfo> for L7ProtocolSendLog {
     fn from(f: MemcachedInfo) -> Self {
-        let flags = if f.is_tls() {
+        let _flags = if f.is_tls() {
             EbpfFlags::TLS.bits()
         } else {
             EbpfFlags::NONE.bits()
@@ -164,7 +154,7 @@ pub struct MemCachedLog {
 }
 
 impl L7ProtocolParserInterface for MemCachedLog {
-    fn check_payload(&mut self, payload: &[u8], param: &ParseParam) -> bool {
+    fn check_payload(&mut self, _payload: &[u8], param: &ParseParam) -> bool {
         if param.l4_protocol != IpProtocol::TCP {
             return false;
         }
@@ -325,13 +315,134 @@ impl L7ProtocolParserInterface for MemCachedLog {
 
         if let Ok(store_command) = parse_store_command {
             match store_command {
-                memcached_parser::MemcachedCommand::Set(_, _, _, _, _, vec) => todo!(),
-                memcached_parser::MemcachedCommand::Add(_, _, _, _, _, vec) => todo!(),
-                memcached_parser::MemcachedCommand::Replace(_, _, _, _, _, vec) => todo!(),
-                memcached_parser::MemcachedCommand::Append(_, _, _, _, vec) => todo!(),
-                memcached_parser::MemcachedCommand::Prepend(_, _, _, _, vec) => todo!(),
+                // if let Ok(Set(key, flags, exptime, length, noreply, value)) = result {
+                memcached_parser::MemcachedCommand::Set(
+                    key,
+                    flags,
+                    exptime,
+                    length,
+                    noreply,
+                    value,
+                ) => {
+                    if info.noreply {
+                        info.request = format!(
+                            "set {} {} {} {} noreply\r\n{:?}\r\n",
+                            &key, &flags, &exptime, &length, &value
+                        );
+                    } else {
+                        info.request = format!(
+                            "set {} {} {} {}\r\n{:?}\r\n",
+                            &key, &flags, &exptime, &length, &value
+                        );
+                    }
+                    info.key = key;
+                    info.proto_flag = flags;
+                    info.exptime = exptime;
+                    info.length = length as u32;
+                    info.noreply = noreply;
+                    let mut v = Vec::new();
+                    v.push(String::from_utf8(value).unwrap_or("".to_string()));
+                    info.value = v;
+                }
+                memcached_parser::MemcachedCommand::Add(
+                    key,
+                    flags,
+                    exptime,
+                    length,
+                    noreply,
+                    value,
+                ) => {
+                    if info.noreply {
+                        info.request = format!(
+                            "add {} {} {} {} noreply\r\n{:?}\r\n",
+                            &key, &flags, &exptime, &length, &value
+                        );
+                    } else {
+                        info.request = format!(
+                            "add {} {} {} {}\r\n{:?}\r\n",
+                            &key, &flags, &exptime, &length, &value
+                        );
+                    }
+                    info.key = key;
+                    info.proto_flag = flags as u32;
+                    info.exptime = exptime;
+                    info.length = length as u32;
+                    info.noreply = noreply;
+                    let mut v = Vec::new();
+                    v.push(String::from_utf8(value).unwrap_or("".to_string()));
+                    info.value = v;
+                }
+                memcached_parser::MemcachedCommand::Replace(
+                    key,
+                    flags,
+                    exptime,
+                    length,
+                    noreply,
+                    value,
+                ) => {
+                    if info.noreply {
+                        info.request = format!(
+                            "replace {} {} {} {} noreply\r\n{:?}\r\n",
+                            &key, &flags, &exptime, &length, &value
+                        );
+                    } else {
+                        info.request = format!(
+                            "replace {} {} {} {}\r\n{:?}\r\n",
+                            &key, &flags, &exptime, &length, &value
+                        );
+                    }
+                    info.key = key;
+                    info.proto_flag = flags;
+                    info.exptime = exptime;
+                    info.length = length as u32;
+                    info.noreply = noreply;
+                    let mut v = Vec::new();
+                    v.push(String::from_utf8(value).unwrap_or("".to_string()));
+                    info.value = v;
+                }
+                memcached_parser::MemcachedCommand::Append(key, flags, length, noreply, value) => {
+                    if info.noreply {
+                        info.request = format!(
+                            "append {} {} 0 {} noreply\r\n{:?}\r\n",
+                            &key, &flags, &length, &value
+                        );
+                    } else {
+                        info.request = format!(
+                            "append {} {} 0 {}\r\n{:?}\r\n",
+                            &key, &flags, &length, &value
+                        );
+                    }
+                    info.key = key;
+                    info.proto_flag = flags;
+                    info.exptime = 0;
+                    info.length = length as u32;
+                    info.noreply = noreply;
+                    let mut v = Vec::new();
+                    v.push(String::from_utf8(value).unwrap_or("".to_string()));
+                    info.value = v;
+                }
+                memcached_parser::MemcachedCommand::Prepend(key, flags, length, noreply, value) => {
+                    if info.noreply {
+                        info.request = format!(
+                            "prepend {} {} 0 {} noreply\r\n{:?}\r\n",
+                            &key, &flags, &length, &value
+                        );
+                    } else {
+                        info.request = format!(
+                            "append {} {} 0 {}\r\n{:?}\r\n",
+                            &key, &flags, &length, &value
+                        );
+                    }
+                    info.key = key;
+                    info.proto_flag = flags;
+                    info.exptime = 0;
+                    info.length = length as u32;
+                    info.noreply = noreply;
+                    let mut v = Vec::new();
+                    v.push(String::from_utf8(value).unwrap_or("".to_string()));
+                    info.value = v;
+                }
             }
-            return Ok(L7ParseResult::Single(L7ProtocolInfo::MemCachedInfo(info)));
         }
 
         if let Ok(values) = get_parse {
@@ -366,13 +477,29 @@ impl L7ProtocolParserInterface for MemCachedLog {
                     info.brief_rep = String::from("TOUCHED");
                     info.response = String::from("TOUCHED");
                 }
+                memcached_parser::Response::QUIT => {
+                    info.brief_rep = String::from("QUIT");
+                    info.response = String::from("QUIT");
+                }
+                memcached_parser::Response::CLIENTERROR => {
+                    info.brief_rep = String::from("CLIENTERROR");
+                    info.response = String::from("CLIENTERROR");
+                }
+                memcached_parser::Response::SERVERERROR => {
+                    info.brief_rep = String::from("SERVERERROR");
+                    info.response = String::from("SERVERERROR");
+                }
+                memcached_parser::Response::ERROR => {
+                    info.brief_rep = String::from("ERROR");
+                    info.response = String::from("ERROR");
+                }
             }
             return Ok(L7ParseResult::Single(L7ProtocolInfo::MemCachedInfo(info)));
         }
+
         return Ok(L7ParseResult::Single(L7ProtocolInfo::MemCachedInfo(
             MemcachedInfo::default(),
         )));
-        // return Ok(L7ParseResult::None);
     }
 
     fn protocol(&self) -> L7Protocol {
@@ -398,9 +525,6 @@ mod memcached_parser {
         io::{self, Write},
     };
 
-    use cgroups_rs::devices;
-    use pnet::packet::ip::IpNextHeaderProtocols::Sm;
-
     pub enum MemcachedCommand {
         Set(String, u32, u32, usize, bool, Vec<u8>),
         Add(String, u32, u32, usize, bool, Vec<u8>),
@@ -417,6 +541,10 @@ mod memcached_parser {
         EXISTS,
         DELETED,
         TOUCHED,
+        QUIT,
+        CLIENTERROR,
+        SERVERERROR,
+        ERROR,
     }
 
     //get <key>*\r\n
@@ -843,24 +971,35 @@ mod memcached_parser {
         // 查找换行符的位置
         if let Some(line_end) = s.find("\r\n") {
             let response_line = &s[..line_end];
-            println!("response_line: {:?}", response_line);
-            if let Some(f1) = response_line.find("NOT_STORED") {
+            if let Some(_f1) = response_line.find("NOT_STORED") {
                 return core::result::Result::Ok(Response::NotStored);
             }
-            if let Some(f2) = response_line.find("STORED") {
+            if let Some(_f2) = response_line.find("STORED") {
                 return core::result::Result::Ok(Response::Stored);
             }
-            if let Some(f3) = response_line.find("EXISTS") {
+            if let Some(_f3) = response_line.find("EXISTS") {
                 return core::result::Result::Ok(Response::EXISTS);
             }
-            if let Some(f4) = response_line.find("NOT_FOUND") {
+            if let Some(_f4) = response_line.find("NOT_FOUND") {
                 return core::result::Result::Ok(Response::NOTFOUND);
             }
-            if let Some(f5) = response_line.find("DELETED") {
+            if let Some(_f5) = response_line.find("DELETED") {
                 return core::result::Result::Ok(Response::DELETED);
             }
-            if let Some(f6) = response_line.find("TOUCHED") {
+            if let Some(_f6) = response_line.find("TOUCHED") {
                 return core::result::Result::Ok(Response::TOUCHED);
+            }
+            if let Some(_f7) = response_line.find("quit") {
+                return core::result::Result::Ok(Response::QUIT);
+            }
+            if let Some(_f8) = response_line.find("CLIENT_ERROR") {
+                return core::result::Result::Ok(Response::CLIENTERROR);
+            }
+            if let Some(_f8) = response_line.find("SERVER_ERROR ") {
+                return core::result::Result::Ok(Response::SERVERERROR);
+            }
+            if let Some(_f8) = response_line.find("ERROR ") {
+                return core::result::Result::Ok(Response::ERROR);
             }
             Err("Not find right result")
         } else {
@@ -940,13 +1079,13 @@ mod tests {
         output
     }
 
-    #[test]
-    fn memcached_check() {
-        //let files = vec!["memcached.pcap"];
-        //println!("check function run ==");
-        let output: String = run("memcached.pcap");
-        println!("check function output :{:?}", output);
-    }
+    // #[test]
+    // fn memcached_check() {
+    //     //let files = vec!["memcached.pcap"];
+    //     //println!("check function run ==");
+    //     let output: String = run("memcached.pcap");
+    //     println!("check function output :{:?}", output);
+    // }
 
     #[test]
     fn test_valid_set_command() {

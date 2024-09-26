@@ -395,6 +395,7 @@ impl L7ProtocolParserInterface for KafkaLog {
             }
             _ => None,
         };
+
         info.command = info.get_command();
         info.endpoint = info.get_endpoint();
         if let Some(config) = param.parse_config {
@@ -439,6 +440,7 @@ impl KafkaLog {
     const MSG_LEN_SIZE: usize = 4;
     const MAX_TRACE_ID: usize = 255;
     const MAX_SESSION_PER_FLOW: usize = 32;
+    const MAX_VERSION: u16 = 12;
 
     fn decode_varint(buf: &[u8]) -> (usize, usize) {
         let mut shift = 0;
@@ -674,18 +676,17 @@ impl KafkaLog {
             //       error_code => INT16
             //       base_offset => INT64
             9..=10 => {
-                let (responses_counter, responses_header_len) = Self::decode_varint(payload);
-                // topic name offset: [responses]
-                if responses_counter == 0 || responses_header_len > payload.len() {
+                if 2 > payload.len() {
                     return Err(Error::KafkaLogParseFailed);
                 }
-                let topic_name_len =
-                    Self::decode_compact_topic_name(&payload[responses_header_len..], info)?;
+                let respones_count = read_u16_be(payload);
+                // topic name offset: [responses]
+                if respones_count == 0 {
+                    return Err(Error::KafkaLogParseFailed);
+                }
+                let topic_name_len = Self::decode_compact_topic_name(&payload[2..], info)?;
 
-                Self::decode_produce_response_partition(
-                    &payload[responses_header_len + topic_name_len..],
-                    info,
-                )?;
+                Self::decode_produce_response_partition(&payload[2 + topic_name_len..], info)?;
             }
             _ => return Err(Error::KafkaLogParseFailed),
         }
@@ -789,14 +790,15 @@ impl KafkaLog {
                 offset
             }
             12 => {
-                let (topic_count, mut offset) = Self::decode_varint(payload);
+                if 2 > payload.len() {
+                    return Err(Error::KafkaLogParseFailed);
+                }
+                let topic_count = read_u16_be(payload);
                 if topic_count == 0 {
                     return Err(Error::KafkaLogParseFailed);
                 }
 
-                offset += Self::decode_compact_topic_name(&payload[offset..], info)?;
-
-                offset
+                2 + Self::decode_compact_topic_name(&payload[2..], info)?
             }
             _ => return Err(Error::KafkaLogParseFailed),
         };
@@ -866,7 +868,7 @@ impl KafkaLog {
                 }
                 offset += Self::decode_fetch_request_topics(&payload[offset..], info)?;
             }
-            // Fetch Request (Version: [7-11]) => replica_id max_wait_ms min_bytes [topics]
+            // Fetch Request (Version: [7-12]) => replica_id max_wait_ms min_bytes [topics]
             //   replica_id => INT32
             //   max_wait_ms => INT32
             //   min_bytes => INT32
@@ -1495,6 +1497,9 @@ impl KafkaLog {
         info.msg_type = LogMessageType::Request;
         info.api_key = read_u16_be(&payload[4..]);
         info.api_version = read_u16_be(&payload[6..]);
+        if info.api_version > Self::MAX_VERSION {
+            return Err(Error::KafkaLogParseFailed);
+        }
         info.correlation_id = read_u32_be(&payload[8..]);
         info.client_id = String::from_utf8_lossy(&payload[14..14 + client_id_len]).into_owned();
         if !info.client_id.is_ascii() {
@@ -1639,6 +1644,7 @@ mod tests {
             ("kafka-sync-v5.pcap", "kafka-sync-v5.result"),
             ("kafka-join-v7.pcap", "kafka-join-v7.result"),
             ("kafka-fetch-v12.pcap", "kafka-fetch-v12.result"),
+            ("fetch-v12.pcap", "fetch-v12.result"),
         ];
 
         for item in files.iter() {

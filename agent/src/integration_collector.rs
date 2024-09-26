@@ -46,6 +46,7 @@ use tokio::{
     task::JoinHandle,
     time,
 };
+use zstd::bulk::compress;
 
 use crate::{
     common::{
@@ -53,7 +54,7 @@ use crate::{
         lookup_key::LookupKey,
         TaggedFlow, Timestamp,
     },
-    config::{handler::LogParserConfig, PrometheusExtraConfig},
+    config::{handler::LogParserConfig, PrometheusExtraLabels},
     exception::ExceptionHandler,
     flow_generator::protocol_logs::{http::handle_endpoint, L7ResponseStatus},
     metric::document::{Direction, TapSide},
@@ -62,9 +63,10 @@ use crate::{
 
 use public::{
     counter::{Counter, CounterType, CounterValue, OwnedCountable},
-    enums::{EthernetType, L4Protocol, TapType},
+    enums::{CaptureNetworkType, EthernetType, L4Protocol},
     l7_protocol::L7Protocol,
     proto::{
+        agent::Exception,
         integration::opentelemetry::proto::{
             common::v1::{
                 any_value::Value::{IntValue, StringValue},
@@ -73,7 +75,6 @@ use public::{
             trace::v1::{span::SpanKind, Span, TracesData},
         },
         metric,
-        trident::Exception,
     },
     queue::DebugSender,
     utils::net::ipv6_enabled,
@@ -537,7 +538,7 @@ fn fill_l7_stats(
     let peer_dst = &mut flow.flow_metrics_peers[1];
     peer_dst.l3_epc_id = dst_info.l3_epc_id;
     peer_dst.nat_real_ip = flow.flow_key.ip_dst;
-    flow.flow_key.tap_type = TapType::Cloud;
+    flow.flow_key.tap_type = CaptureNetworkType::Cloud;
     let flow_stat_time = flow.flow_stat_time;
     let flow_endpoint = flow.last_endpoint.clone();
     let mut tagged_flow = TaggedFlow::default();
@@ -596,11 +597,12 @@ async fn handler(
     application_log_sender: DebugSender<ApplicationLog>,
     exception_handler: ExceptionHandler,
     compressed: bool,
+    profile_compressed: bool,
     counter: Arc<CompressedMetric>,
     local_epc_id: u32,
     policy_getter: Arc<PolicyGetter>,
     time_diff: Arc<AtomicI64>,
-    prometheus_extra_config: Arc<PrometheusExtraConfig>,
+    prometheus_extra_config: Arc<PrometheusExtraLabels>,
     log_parser_config: Arc<LogParserConfig>,
     flow_id: Arc<AtomicU64>,
     external_profile_integration_disabled: bool,
@@ -678,9 +680,9 @@ async fn handler(
                 return Ok(Response::builder().body(Body::empty()).unwrap());
             }
             let headers = req.headers();
-            let labels = &prometheus_extra_config.labels;
-            let labels_limit = prometheus_extra_config.labels_limit;
-            let values_limit = prometheus_extra_config.values_limit;
+            let labels = &prometheus_extra_config.extra_labels;
+            let labels_limit = prometheus_extra_config.label_length;
+            let values_limit = prometheus_extra_config.value_length;
             let mut labels_count = 0;
             let mut values_count = 0;
             let mut extra_label_names = vec![];
@@ -695,8 +697,8 @@ async fn handler(
                             .to_str()
                             .unwrap_or_default()
                             .to_string();
-                        labels_count += label.len() as u32;
-                        values_count += value.len() as u32;
+                        labels_count += label.len();
+                        values_count += value.len();
                         if labels_count > labels_limit || values_count > values_limit {
                             debug!("labels_count exceeds the labels limit:{} or values_count exceeds the values limit:{} ", labels_limit, values_limit);
                             break;
@@ -770,6 +772,22 @@ async fn handler(
                 }
             };
             profile.data = decode_metric(whole_body, &part.headers)?;
+            if profile_compressed {
+                match compress(&profile.data, 0) {
+                    Ok(compressed_data) => {
+                        profile.data_compressed = true;
+                        counter
+                            .uncompressed
+                            .fetch_add(profile.data.len() as u64, Ordering::Relaxed);
+                        counter
+                            .compressed
+                            .fetch_add(compressed_data.len() as u64, Ordering::Relaxed);
+                        profile.data = compressed_data;
+                    }
+                    Err(e) => debug!("failed to compress: {:?}", e),
+                }
+            }
+
             profile.ip = match peer_addr.ip() {
                 IpAddr::V4(ip4) => ip4.octets().to_vec(),
                 IpAddr::V6(ip6) => ip6.octets().to_vec(),
@@ -912,10 +930,11 @@ pub struct MetricServer {
     server_shutdown_tx: Mutex<Option<mpsc::Sender<()>>>,
     counter: Arc<CompressedMetric>,
     compressed: Arc<AtomicBool>,
+    profile_compressed: Arc<AtomicBool>,
     local_epc_id: u32,
     policy_getter: Arc<PolicyGetter>,
     time_diff: Arc<AtomicI64>,
-    prometheus_extra_config: Arc<PrometheusExtraConfig>,
+    prometheus_extra_config: Arc<PrometheusExtraLabels>,
     log_parser_config: Arc<LogParserConfig>,
     external_profile_integration_disabled: bool,
     external_trace_integration_disabled: bool,
@@ -936,10 +955,11 @@ impl MetricServer {
         port: u16,
         exception_handler: ExceptionHandler,
         compressed: bool,
+        profile_compressed: bool,
         local_epc_id: u32,
         policy_getter: PolicyGetter,
         time_diff: Arc<AtomicI64>,
-        prometheus_extra_config: PrometheusExtraConfig,
+        prometheus_extra_config: PrometheusExtraLabels,
         log_parser_config: LogParserConfig,
         external_profile_integration_disabled: bool,
         external_trace_integration_disabled: bool,
@@ -953,6 +973,7 @@ impl MetricServer {
                 runtime,
                 thread: Arc::new(Mutex::new(None)),
                 compressed: Arc::new(AtomicBool::new(compressed)),
+                profile_compressed: Arc::new(AtomicBool::new(profile_compressed)),
                 otel_sender,
                 compressed_otel_sender,
                 prometheus_sender,
@@ -980,6 +1001,10 @@ impl MetricServer {
 
     pub fn enable_compressed(&self, enable: bool) {
         self.compressed.store(enable, Ordering::Relaxed);
+    }
+
+    pub fn enable_profile_compressed(&self, enable: bool) {
+        self.profile_compressed.store(enable, Ordering::Relaxed);
     }
 
     pub fn set_port(&self, port: u16) {
@@ -1011,6 +1036,7 @@ impl MetricServer {
         let running = self.running.clone();
         let counter = self.counter.clone();
         let compressed = self.compressed.clone();
+        let profile_compressed = self.profile_compressed.clone();
         let local_epc_id = self.local_epc_id.clone();
         let policy_getter = self.policy_getter.clone();
         let time_diff = self.time_diff.clone();
@@ -1078,6 +1104,7 @@ impl MetricServer {
                     let exception_handler_inner = exception_handler.clone();
                     let counter = counter.clone();
                     let compressed = compressed.clone();
+                    let profile_compressed = profile_compressed.clone();
                     let local_epc_id = local_epc_id.clone();
                     let policy_getter = policy_getter.clone();
                     let time_diff = time_diff.clone();
@@ -1095,6 +1122,7 @@ impl MetricServer {
                         let peer_addr = conn.remote_addr();
                         let counter = counter.clone();
                         let compressed = compressed.clone();
+                        let profile_compressed = profile_compressed.clone();
                         let local_epc_id = local_epc_id.clone();
                         let policy_getter = policy_getter.clone();
                         let time_diff = time_diff.clone();
@@ -1115,6 +1143,7 @@ impl MetricServer {
                                     application_log_sender.clone(),
                                     exception_handler.clone(),
                                     compressed.load(Ordering::Relaxed),
+                                    profile_compressed.load(Ordering::Relaxed),
                                     counter.clone(),
                                     local_epc_id,
                                     policy_getter.clone(),

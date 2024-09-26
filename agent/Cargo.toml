@@ -8,7 +8,13 @@ default-run = "deepflow-agent"
 
 [workspace]
 members = ["crates/*", "plugins/packet_segmentation_reassembly"]
-exclude = ["src/ebpf/samples/rust/profiler", "src/ebpf/samples/rust/socket-tracer"]
+exclude = [
+    "src/ebpf/samples/rust/profiler",
+    "src/ebpf/samples/rust/socket-tracer",
+]
+
+[workspace.dependencies]
+prost = "0.11"
 
 [dependencies]
 ahash = "0.8"
@@ -66,7 +72,7 @@ parking_lot = "0.11"
 pcap_assembler = { path = "plugins/pcap_assembler" }
 pcap-sys = "0.1.3"
 pnet = "^0.29"
-prost = "0.11"
+prost.workspace = true
 public = { path = "crates/public" }
 rand = "0.8.5"
 regex = "1"
@@ -90,6 +96,7 @@ tokio = { version = "1.20.1", features = ["full"] }
 tonic = "0.8.1"
 wasmtime = "12.0.1"
 wasmtime-wasi = "12.0.1"
+zstd = "0.13.2"
 
 
 [target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
@@ -141,9 +148,11 @@ tempfile = "3.2.0"
 uluru = "3.0.0"
 
 [build-dependencies]
+anyhow = "1.0"
 chrono = "0.4"
 dunce = "1"
 tonic-build = "0.8.0"
+walkdir = "2"
 
 [features]
 enterprise = ["extended_profile", "enterprise-utils"]

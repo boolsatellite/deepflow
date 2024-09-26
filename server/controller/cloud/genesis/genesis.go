@@ -29,6 +29,7 @@ import (
 	"github.com/deepflowio/deepflow/server/controller/common"
 	mysqlmodel "github.com/deepflowio/deepflow/server/controller/db/mysql/model"
 	"github.com/deepflowio/deepflow/server/controller/genesis"
+	gcommon "github.com/deepflowio/deepflow/server/controller/genesis/common"
 	"github.com/deepflowio/deepflow/server/controller/model"
 	"github.com/deepflowio/deepflow/server/controller/statsd"
 	"github.com/deepflowio/deepflow/server/libs/logger"
@@ -41,16 +42,14 @@ type Genesis struct {
 	teamID          int
 	ipV4CIDRMaxMask int
 	ipV6CIDRMaxMask int
-	defaultVpc      bool
 	Name            string
 	Lcuuid          string
 	UuidGenerate    string
-	regionUuid      string
+	regionLcuuid    string
 	azLcuuid        string
-	defaultVpcName  string
 	ips             []cloudmodel.IP
 	subnets         []cloudmodel.Subnet
-	genesisData     genesis.GenesisSyncDataResponse
+	genesisData     gcommon.GenesisSyncDataResponse
 	cloudStatsd     statsd.CloudStatsd
 }
 
@@ -68,6 +67,10 @@ func NewGenesis(orgID int, domain mysqlmodel.Domain, cfg config.CloudConfig) (*G
 	if ipV6MaxMask == 0 {
 		ipV6MaxMask = 64
 	}
+	regionLcuuid := config.Get("region_uuid").MustString()
+	if regionLcuuid == "" {
+		regionLcuuid = common.DEFAULT_REGION
+	}
 	return &Genesis{
 		orgID:           orgID,
 		teamID:          domain.TeamID,
@@ -76,9 +79,8 @@ func NewGenesis(orgID int, domain mysqlmodel.Domain, cfg config.CloudConfig) (*G
 		Name:            domain.Name,
 		Lcuuid:          domain.Lcuuid,
 		UuidGenerate:    domain.DisplayName,
-		defaultVpcName:  cfg.GenesisDefaultVpcName,
-		regionUuid:      config.Get("region_uuid").MustString(),
-		genesisData:     genesis.GenesisSyncDataResponse{},
+		regionLcuuid:    regionLcuuid,
+		genesisData:     gcommon.GenesisSyncDataResponse{},
 		cloudStatsd:     statsd.NewCloudStatsd(),
 	}, nil
 }
@@ -104,7 +106,7 @@ func (g *Genesis) GetStatter() statsd.StatsdStatter {
 	}
 }
 
-func (g *Genesis) getGenesisData() (genesis.GenesisSyncDataResponse, error) {
+func (g *Genesis) getGenesisData() (gcommon.GenesisSyncDataResponse, error) {
 	return genesis.GenesisService.GetGenesisSyncResponse(g.orgID)
 }
 
@@ -263,7 +265,6 @@ func (g *Genesis) generateIPsAndSubnets() {
 
 func (g *Genesis) GetCloudData() (cloudmodel.Resource, error) {
 	g.azLcuuid = ""
-	g.defaultVpc = false
 	g.cloudStatsd = statsd.NewCloudStatsd()
 
 	if genesis.GenesisService == nil {
@@ -316,14 +317,6 @@ func (g *Genesis) GetCloudData() (cloudmodel.Resource, error) {
 	ips, err := g.getIPs()
 	if err != nil {
 		return cloudmodel.Resource{}, err
-	}
-	if g.defaultVpc {
-		vpc := cloudmodel.VPC{
-			Lcuuid:       common.GetUUIDByOrgID(g.orgID, g.defaultVpcName),
-			Name:         g.defaultVpcName,
-			RegionLcuuid: g.regionUuid,
-		}
-		vpcs = append(vpcs, vpc)
 	}
 
 	resource := cloudmodel.Resource{

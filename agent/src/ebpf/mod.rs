@@ -63,6 +63,8 @@ pub const SOCK_DATA_FASTCGI: u16 = 44;
 #[allow(dead_code)]
 pub const SOCK_DATA_BRPC: u16 = 45;
 #[allow(dead_code)]
+pub const SOCK_DATA_SOME_IP: u16 = 47;
+#[allow(dead_code)]
 pub const SOCK_DATA_MYSQL: u16 = 60;
 #[allow(dead_code)]
 pub const SOCK_DATA_POSTGRESQL: u16 = 61;
@@ -95,13 +97,17 @@ pub const SOCK_DATA_CUSTOM: u16 = 127;
 
 // Feature
 #[allow(dead_code)]
-pub const FEATURE_UPROBE_GOLANG_SYMBOL: c_int = 0;
+pub const FEATURE_UPROBE_GOLANG_SYMBOL: c_int = 1;
 #[allow(dead_code)]
-pub const FEATURE_UPROBE_OPENSSL: c_int = 1;
+pub const FEATURE_UPROBE_OPENSSL: c_int = 2;
 #[allow(dead_code)]
-pub const FEATURE_UPROBE_GOLANG: c_int = 2;
+pub const FEATURE_UPROBE_GOLANG: c_int = 3;
 #[allow(dead_code)]
-pub const FEATURE_UPROBE_JAVA: c_int = 3;
+pub const FEATURE_PROFILE_ONCPU: c_int = 4;
+#[allow(dead_code)]
+pub const FEATURE_PROFILE_OFFCPU: c_int = 5;
+#[allow(dead_code)]
+pub const FEATURE_PROFILE_MEMORY: c_int = 6;
 
 //L7层协议是否需要重新核实
 #[allow(dead_code)]
@@ -185,17 +191,9 @@ cfg_if::cfg_if! {
     }
 }
 
-// Profile event types
-#[allow(dead_code)]
-pub const PROFILE_EVENT_UNKNOWN: u8 = 0;
-cfg_if::cfg_if! {
-    if #[cfg(feature = "extended_profile")] {
-        #[allow(dead_code)]
-        pub const PROFILE_EVENT_MEM_ALLOC: u8 = 1;
-        #[allow(dead_code)]
-        pub const PROFILE_EVENT_MEM_IN_USE: u8 = 2;
-    }
-}
+#[cfg(feature = "extended_profile")]
+pub const PROFILER_CTX_MEMORY_IDX: usize = 2;
+pub const PROFILER_CTX_NUM: usize = 3;
 
 //Process exec/exit events
 #[repr(C)]
@@ -316,13 +314,7 @@ impl fmt::Display for SK_BPF_DATA {
             (self.tuple.rport, self.tuple.lport)
         };
         unsafe {
-            #[cfg(target_arch = "aarch64")]
-            let process_kname = CStr::from_ptr(self.process_kname.as_ptr() as *const u8)
-                .to_str()
-                .unwrap();
-
-            #[cfg(target_arch = "x86_64")]
-            let process_kname = CStr::from_ptr(self.process_kname.as_ptr() as *const i8)
+            let process_kname = CStr::from_ptr(self.process_kname.as_ptr() as *const c_char)
                 .to_str()
                 .unwrap();
 
@@ -423,7 +415,6 @@ pub struct SK_TRACE_STATS {
 #[derive(Debug, Copy, Clone)]
 pub struct stack_profile_data {
     pub profiler_type: u8, // Profiler type, such as 1(PROFILER_TYPE_ONCPU).
-    pub event_type: u8,    // Profile event type, such as 1 (PROFILE_EVENT_ONCPU)
     pub timestamp: u64,    // Timestamp of the stack trace data(unit: nanoseconds).
     pub pid: u32,          // User-space process-ID.
     /*
@@ -438,11 +429,16 @@ pub struct stack_profile_data {
     pub k_stack_id: u32, // Kernel space stackID.
     pub cpu: u32,        // The captured stack trace data is generated on which CPU?
     /*
+     * If profiler_type is PROFILER_TYPE_MEMORY, this is allocated or free'd address.
+     * Or 0 for java processes
+     */
+    pub mem_addr: u64,
+    /*
      * The profiler captures the sum of durations of occurrences of the same
      * data by querying with the quadruple
      * "<pid + stime + u_stack_id + k_stack_id + tid + cpu>" as the key.
      * In microseconds as the unit of time.
-     * If event_type is MEM_ALLOC or MEM_IN_USE, this is byte count value
+     * If profiler_type is PROFILER_TYPE_MEMORY, this is allocated byte count value, or 0 for frees
      */
     pub count: u64,
     /*
@@ -486,6 +482,16 @@ extern "C" {
     pub fn enable_ebpf_seg_reasm_protocol(protocol: c_int) -> c_int;
     pub fn set_feature_regex(idx: c_int, pattern: *const c_char) -> c_int;
     /*
+     * @brief Add regex-matched process list for feature.
+     *
+     * @param feature Refers to a specific feature module, value: FEATURE_*
+     * @param pids Address of the process list
+     * @param num Number of elements in the process list
+     * @return 0 on success, non-zero on error
+     */
+    pub fn set_feature_pids(feature: c_int, pids: *const c_int, num: c_int) -> c_int;
+
+    /*
      * Configuring application layer protocol ports
      *
      * When 'l7-protocol-enabled' includes application layer protocol types,
@@ -522,10 +528,7 @@ extern "C" {
     //   is_stdout 日志是否输出到标准输出，true 写到标准输出，false 不写到标准输出。
     // 返回值：
     //   成功返回0，否则返回非0
-    #[cfg(target_arch = "x86_64")]
-    pub fn bpf_tracer_init(log_file: *const i8, is_stdout: bool) -> c_int;
-    #[cfg(target_arch = "aarch64")]
-    pub fn bpf_tracer_init(log_file: *const u8, is_stdout: bool) -> c_int;
+    pub fn bpf_tracer_init(log_file: *const c_char, is_stdout: bool) -> c_int;
 
     // 所有tracer启动完毕后，最后显示调用bpf_tracer_finish()来通知主程序
     pub fn bpf_tracer_finish();
@@ -552,7 +555,7 @@ extern "C" {
     // socket_map_max_reclaim: socket map表项进行清理的最大阈值，当前map的表项数量超过这个值进行map清理操作。
     // 返回值：成功返回0，否则返回非0
     pub fn running_socket_tracer(
-        callback: extern "C" fn(sd: *mut SK_BPF_DATA),
+        callback: extern "C" fn(_: *mut c_void, sd: *mut SK_BPF_DATA),
         thread_nr: c_int,
         perf_pages_cnt: c_uint,
         ring_size: c_uint,
@@ -580,63 +583,28 @@ extern "C" {
      *   symbols. The unit of measurement used is seconds.
      *   The recommended range for values is [5, 3600], default valuse is 60.
      * @callback Profile data processing callback interface
+     * @callback_ctx Contexts to pass into callback function from different profiler readers.
+     *               Accesses to each context is single threaded.
      * @returns 0 on success, < 0 on error
      */
     pub fn start_continuous_profiler(
         freq: c_int,
         java_syms_update_delay: c_int,
-        callback: extern "C" fn(_data: *mut stack_profile_data),
+        callback: extern "C" fn(ctx: *mut c_void, _data: *mut stack_profile_data),
+        callback_ctx: *const [*mut c_void; PROFILER_CTX_NUM],
     ) -> c_int;
 
     /*
      * stop continuous profiler
+     * @callback_ctx Return the contexts provided from `start_continuous_profiler` for memory releasing.
      * @returns 0 on success, < 0 on error
      */
-    pub fn stop_continuous_profiler() -> c_int;
+    pub fn stop_continuous_profiler(callback_ctx: *mut [*mut c_void; PROFILER_CTX_NUM]) -> c_int;
 
     /*
      * Continuous profiler running state
      */
     pub fn continuous_profiler_running() -> bool;
-
-    /*
-     * To set the regex matching for the profiler.
-     *
-     * Perform regular expression matching on process names.
-     * Processes that successfully match the regular expression are
-     * aggregated using the key:
-     *     `{pid + stime + u_stack_id + k_stack_id + tid + cpu}`.
-     *
-     * For processes that do not match, they are aggregated using the
-     * key:
-     *     `<process name + u_stack_id + k_stack_id + cpu>`.
-     *
-     * Using regular expressions, we match process names to establish
-     * symbol table caching for specific processes, rather than enabling
-     * symbol caching for all processes. This approach aims to reduce
-     * memory usage.
-     *
-     * For example:
-     *
-     *  "^(java|nginx|profiler|telegraf|mysqld|socket_tracer|.*deepflow.*)$"
-     *
-     * This regex pattern matches the process names: "java", "nginx", "profiler",
-     * "telegraf", "mysqld", "socket_tracer", and any process containing the
-     * substring "deepflow".
-     *
-     * By using this interface, you can customize the regular expression to
-     * match specific process names that you want to establish symbol table
-     * caching for, providing flexibility and control over which processes will
-     * have symbol caching enabled. This allows you to finetune the memory usage
-     * and profiling behavior of the profiler according to your requirements.
-     *
-     * The default expression is empty (''), indicating that no profile data will
-     * be generated.
-     *
-     * @pattern : Regular expression pattern. e.g. "^(java|nginx|.*ser.*)$"
-     * @returns 0 on success, < 0 on error
-     */
-    pub fn set_profiler_regex(pattern: *const c_char) -> c_int;
 
     /*
      * This interface is used to set whether CPUID should be included in the
@@ -712,6 +680,7 @@ extern "C" {
     pub fn show_collect_pool();
     pub fn disable_syscall_trace_id() -> c_int;
 
+    pub fn dwarf_available() -> bool;
     /*
      * DWARF unwinding related settings.
      * Be advised that these settings are only effective before
@@ -727,8 +696,6 @@ extern "C" {
 
     cfg_if::cfg_if! {
         if #[cfg(feature = "extended_profile")] {
-            pub fn set_offcpu_profiler_regex(pattern: *const c_char) -> c_int;
-
             pub fn enable_offcpu_profiler() -> c_int;
 
             pub fn disable_offcpu_profiler() -> c_int;
@@ -738,8 +705,6 @@ extern "C" {
             pub fn set_offcpu_minblock_time(
                 block_time: c_uint,
             ) -> c_int;
-
-            pub fn set_memory_profiler_regex(pattern: *const c_char) -> c_int;
 
             pub fn enable_memory_profiler() -> c_int;
 

@@ -17,6 +17,7 @@
 use chrono::prelude::DateTime;
 use chrono::FixedOffset;
 use chrono::Utc;
+use std::env;
 use socket_tracer::ebpf::*;
 use std::convert::TryInto;
 use std::ffi::CString;
@@ -199,7 +200,7 @@ extern "C" fn debug_callback(_data: *mut c_char, len: c_int) {
     }
 }
 
-extern "C" fn socket_trace_callback(sd: *mut SK_BPF_DATA) {
+extern "C" fn socket_trace_callback(_: *mut c_void, sd: *mut SK_BPF_DATA) {
     unsafe {
         let mut proto_tag = String::from("");
         if sk_proto_safe(sd) == SOCK_DATA_OTHER {
@@ -234,6 +235,8 @@ extern "C" fn socket_trace_callback(sd: *mut SK_BPF_DATA) {
             proto_tag.push_str("FASTCGI");
         } else if sk_proto_safe(sd) == SOCK_DATA_BRPC {
             proto_tag.push_str("BRPC");
+        } else if sk_proto_safe(sd) == SOCK_DATA_SOME_IP {
+            proto_tag.push_str("SomeIP");
         } else if sk_proto_safe(sd) == SOCK_DATA_MONGO {
             proto_tag.push_str("MONGO");
         } else if sk_proto_safe(sd) == SOCK_DATA_TLS {
@@ -383,6 +386,9 @@ fn get_counter(counter_type: u32) -> u32 {
 }
 
 fn main() {
+    if env::var("RUST_LOG").is_err() {
+        env::set_var("RUST_LOG", "info")
+    }
     env_logger::builder()
         .format_timestamp(Some(env_logger::TimestampPrecision::Millis))
         .init();
@@ -396,6 +402,7 @@ fn main() {
         enable_ebpf_protocol(SOCK_DATA_SOFARPC as c_int);
         enable_ebpf_protocol(SOCK_DATA_FASTCGI as c_int);
         enable_ebpf_protocol(SOCK_DATA_BRPC as c_int);
+        enable_ebpf_protocol(SOCK_DATA_SOME_IP as c_int);
         enable_ebpf_protocol(SOCK_DATA_MYSQL as c_int);
         enable_ebpf_protocol(SOCK_DATA_POSTGRESQL as c_int);
         enable_ebpf_protocol(SOCK_DATA_REDIS as c_int);
@@ -418,10 +425,6 @@ fn main() {
         //    FEATURE_UPROBE_GOLANG,
         //    CString::new(".*".as_bytes()).unwrap().as_c_str().as_ptr(),
         //);
-        set_feature_regex(
-            FEATURE_UPROBE_JAVA,
-            CString::new(".*".as_bytes()).unwrap().as_c_str().as_ptr(),
-        );
 
         //set_io_event_collect_mode(1);
 
@@ -496,6 +499,13 @@ fn main() {
         );
         set_protocol_ports_bitmap(
             SOCK_DATA_BRPC as c_int,
+            CString::new("1-65535".as_bytes())
+                .unwrap()
+                .as_c_str()
+                .as_ptr(),
+        );
+        set_protocol_ports_bitmap(
+            SOCK_DATA_SOME_IP as c_int,
             CString::new("1-65535".as_bytes())
                 .unwrap()
                 .as_c_str()
@@ -601,6 +611,12 @@ fn main() {
             ::std::process::exit(1);
         }
 
+        let feature: c_int = FEATURE_UPROBE_GOLANG;
+        let pids: [c_int; 3] = [101, 202, 303];
+        let num: c_int = pids.len() as c_int;
+        let result = set_feature_pids(feature, pids.as_ptr(), num);
+        println!("Result {}", result);
+
         // test data limit max
         set_data_limit_max(10000);
 
@@ -621,7 +637,8 @@ fn main() {
         //    ::std::process::exit(1);
         //}
 
-        //set_profiler_regex(
+        //set_feature_regex(
+        //    ebpf::FEATURE_PROFILE_ONCPU,
         //    CString::new(
         //        "^(java|nginx|profiler|telegraf|mysqld|.*deepflow.*|socket_tracer)$".as_bytes(),
         //    )

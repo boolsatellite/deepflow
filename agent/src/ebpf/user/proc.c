@@ -307,8 +307,6 @@ static inline struct symbolizer_proc_info *add_proc_info_to_cache(struct
 		free_symbolizer_cache_kvp(kv);
 		return NULL;
 	} else {
-		/* Extended handling associated with process execute event. */
-		extended_proc_event_handler(pid, p->comm, PROC_EXEC);
 		__sync_fetch_and_add(&h->hash_elems_count, 1);
 	}
 
@@ -317,13 +315,6 @@ static inline struct symbolizer_proc_info *add_proc_info_to_cache(struct
 
 static inline int del_proc_info_from_cache(struct symbolizer_cache_kvp *kv)
 {
-	if (kv->v.proc_info_p) {
-		struct symbolizer_proc_info *p;
-		p = (struct symbolizer_proc_info *)kv->v.proc_info_p;
-		/* Extended handling associated with process exit event. */
-		extended_proc_event_handler((int)kv->k.pid, p->comm, PROC_EXIT);
-	}
-
 	free_symbolizer_cache_kvp(kv);
 	return 0;
 }
@@ -1119,6 +1110,17 @@ static int which_so_in_process(const char *libname, int pid, char *libpath)
 
 	fclose(fp);
 	return found;
+}
+
+bool check_so_path_by_pid_and_name(int pid, const char *so_name)
+{
+	char so_path[PATH_MAX] = { 0 };
+
+	int offset = snprintf(so_path, sizeof(so_path), "/proc/%d/root", pid);
+	if (offset < 0 || offset >= sizeof(so_path))
+		return NULL;
+
+	return which_so_in_process(so_name, pid, so_path + offset) != 0;
 }
 
 char *get_so_path_by_pid_and_name(int pid, const char *so_name)

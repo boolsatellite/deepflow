@@ -645,11 +645,11 @@ func (v *VTapInfo) GetSelfUpdateUrl() string {
 	return v.config.SelfUpdateUrl
 }
 
-func (v *VTapInfo) GetTridentTypeForUnkonwVTap() uint16 {
+func (v *VTapInfo) GetTridentTypeForUnknowVTap() uint16 {
 	if v == nil {
 		return 0
 	}
-	return v.config.TridentTypeForUnkonwVtap
+	return v.config.TridentTypeForUnknowVtap
 }
 
 func (v *VTapInfo) GetGroupData() []byte {
@@ -996,14 +996,15 @@ func (v *VTapInfo) getVTapPodDomains(c *VTapCache) []string {
 	return result
 }
 
-func (v *VTapInfo) GetKubernetesClusterID(clusterID string, value string, force bool) string {
+func (v *VTapInfo) GetKubernetesClusterID(clusterID string, value string, force bool, watchPolicy int) string {
 	if v == nil {
-		if force {
+		// force field is for compatibility old version agent
+		if force || (watchPolicy == int(KWP_WATCH_ONLY)) {
 			return value
 		}
 		return ""
 	}
-	return v.kcData.getClusterID(clusterID, value, force)
+	return v.kcData.getClusterID(clusterID, value, force || (watchPolicy == int(KWP_WATCH_ONLY)))
 }
 
 func (v *VTapInfo) putChVTapChangedForPD() {

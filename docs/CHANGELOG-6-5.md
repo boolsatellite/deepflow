@@ -11,6 +11,23 @@
 * feat: CK’s username and password support the use of special characters [#7229](https://github.com/deepflowio/deepflow/pull/7119)
 
 #### Bug Fix
+* fix: reduce kafka app misidentification [#8206](https://github.com/deepflowio/deepflow/pull/8206) by [yuanchaoa](https://github.com/yuanchaoa)
+* fix: incorrect tcp rrt [#8190](https://github.com/deepflowio/deepflow/pull/8190) by [yuanchaoa](https://github.com/yuanchaoa)
+* fix: the aggregation method of unsummable fields of custom data_source is wrong [#8182](https://github.com/deepflowio/deepflow/pull/8182) by [lzf575](https://github.com/lzf575)
+* fix: applicaition log decode failed causes subsequent data anomalies [#8178](https://github.com/deepflowio/deepflow/pull/8178) by [lzf575](https://github.com/lzf575)
+* fix: Bad cstr passed into pcap_compile_nopcap [#8175](https://github.com/deepflowio/deepflow/pull/8175) by [rvql](https://github.com/rvql)
+* fix: agent - eBPF fix errors caused by java_syms_update_tasks_head [#8147](https://github.com/deepflowio/deepflow/pull/8147) by [yinjiping](https://github.com/yinjiping)
+* fix: dispatcher pipelines is empty [#8001](https://github.com/deepflowio/deepflow/pull/8001) by [yuanchaoa](https://github.com/yuanchaoa)
+* fix: incorrect request resource in kafka logs [#8142](https://github.com/deepflowio/deepflow/pull/8142) by [yuanchaoa](https://github.com/yuanchaoa)
+* fix: specify the go mod version when cli verify [#8136](https://github.com/deepflowio/deepflow/pull/8136) by [jiumos](https://github.com/jiumos)
+* fix:  specify the go mod version when building the cli [#8123](https://github.com/deepflowio/deepflow/pull/8123) by [jiumos](https://github.com/jiumos)
+* fix: agent - eBPF Fix the calculation of total process time [#8116](https://github.com/deepflowio/deepflow/pull/8116) by [yinjiping](https://github.com/yinjiping)
+* fix: querier last function add order by time [#8113](https://github.com/deepflowio/deepflow/pull/8113) by [xiaochaoren1](https://github.com/xiaochaoren1)
+* fix: agent desensitizes the content in backticks [#8073](https://github.com/deepflowio/deepflow/pull/8073) by [TomatoMr](https://github.com/TomatoMr)
+* fix: agent command panic [#8070](https://github.com/deepflowio/deepflow/pull/8070) by [roryye](https://github.com/roryye)
+* fix: add timeout to receive agent command heart beat [#8048](https://github.com/deepflowio/deepflow/pull/8048) by [roryye](https://github.com/roryye)
+* fix: target port associated to controller [#8057](https://github.com/deepflowio/deepflow/pull/8057) by [askyrie](https://github.com/askyrie)
+* fix: OffCpuProfile adds authorization control [#8022](https://github.com/deepflowio/deepflow/pull/8022) by [jin-xiaofeng](https://github.com/jin-xiaofeng)
 * fix: agent - eBPF Fix the issue with loading '__sys_recvmmsg' [#8052](https://github.com/deepflowio/deepflow/pull/8052) by [yinjiping](https://github.com/yinjiping)
 * fix: controller records unnecessary error logs [#8025](https://github.com/deepflowio/deepflow/pull/8025) by [ZhengYa-0110](https://github.com/ZhengYa-0110)
 * fix: agent - eBPF fentry/fexit Check for '__sys_recvmmsg' [#8011](https://github.com/deepflowio/deepflow/pull/8011) by [yinjiping](https://github.com/yinjiping)
@@ -126,6 +143,12 @@
 **[Changelog for v6.5](https://www.deepflow.io/docs/release-notes/release-6.5-ce)**<br/>
 
 #### NEW FEATURE
+* feat: the application log table uses app_service as the primary key [#8221](https://github.com/deepflowio/deepflow/pull/8221) by [lzf575](https://github.com/lzf575)
+* feat: default genesis sync vpc name [#8133](https://github.com/deepflowio/deepflow/pull/8133) by [askyrie](https://github.com/askyrie)
+* feat: querier support simple sql [#8121](https://github.com/deepflowio/deepflow/pull/8121) by [xiaochaoren1](https://github.com/xiaochaoren1)
+* feat: agent - eBPF Optimize interface 'java_syms_update_main' [#8103](https://github.com/deepflowio/deepflow/pull/8103) by [yinjiping](https://github.com/yinjiping)
+* feat: Change opengauss api group [#8099](https://github.com/deepflowio/deepflow/pull/8099) by [rvql](https://github.com/rvql)
+* feat: improves performance of recorder synchronization when there are a large number of process data [#8086](https://github.com/deepflowio/deepflow/pull/8086) by [ZhengYa-0110](https://github.com/ZhengYa-0110)
 * feat: support multi target port [#8032](https://github.com/deepflowio/deepflow/pull/8032) by [askyrie](https://github.com/askyrie)
 * feat: trace tree support store PseudoLink field [#7952](https://github.com/deepflowio/deepflow/pull/7952) by [lzf575](https://github.com/lzf575)
 * feat: add enable features to agent group [#7945](https://github.com/deepflowio/deepflow/pull/7945) by [roryye](https://github.com/roryye)
@@ -198,6 +221,8 @@
 * feat: add change log [#7095](https://github.com/deepflowio/deepflow/pull/7095) by [Nick-0314](https://github.com/Nick-0314)
 
 #### Refactoring
+* refactor: agent adds the 'disabled-cgroups' configuration. [#8165](https://github.com/deepflowio/deepflow/pull/8165) by [TomatoMr](https://github.com/TomatoMr)
+* refactor: agent adds a disable_cgroups option [#8159](https://github.com/deepflowio/deepflow/pull/8159) by [TomatoMr](https://github.com/TomatoMr)
 * refactor: agent remove prometheus api sync [#7577](https://github.com/deepflowio/deepflow/pull/7577) by [TomatoMr](https://github.com/TomatoMr)
 * refactor: Change crate name [#7158](https://github.com/deepflowio/deepflow/pull/7158) by [rvql](https://github.com/rvql)
 

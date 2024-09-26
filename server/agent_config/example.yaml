@@ -1085,24 +1085,27 @@ static_config:
   l7-protocol-enabled:
   - HTTP
   - HTTP2 ## for both HTTP2 and gRPC
-  - SofaRPC
-  - FastCGI
-  - bRPC
-  - Dubbo
+  #- Dubbo
+  #- SofaRPC
+  #- FastCGI
+  #- bRPC
+  #- Tars
+  #- SomeIP
   - MySQL
-  - PostgreSQL
+  #- PostgreSQL
+  #- Oracle
   - Redis
-  - MongoDB
+  #- MongoDB
   - Kafka
-  - MQTT
-  - AMQP
-  - OpenWire
-  - NATS
-  - Pulsar
-  - ZMTP
+  #- MQTT
+  #- AMQP
+  #- OpenWire
+  #- NATS
+  #- Pulsar
+  #- ZMTP
   - DNS
   - TLS
-  - Custom ## custom protocol from plugin
+  #- Custom ## custom protocol from plugin
 
   # Application Protocol Port Numbers
   # Default: 53,5353 for DNS, 443,6443 for TLS, 1-65535 for other Protocols.
@@ -1113,10 +1116,12 @@ static_config:
   l7-protocol-ports:
     "HTTP": "1-65535"
     "HTTP2": "1-65535" # for both HTTP2 and gRPC
+    "Dubbo": "1-65535"
     "SofaRPC": "1-65535"
     "FastCGI": "1-65535"
     "bRPC": "1-65535"
-    "Dubbo": "1-65535"
+    "Tars": "1-65535"
+    "SomeIP": "1-65535"
     "MySQL": "1-65535"
     "PostgreSQL": "1-65535"
     "Oracle": "1521"
@@ -1152,6 +1157,8 @@ static_config:
     SOFARPC: []
     FastCGI: []
     bRPC: []
+    Tars: []
+    SomeIP: []
     MySQL: []
     PostgreSQL: []
     Oracle: []
@@ -1259,6 +1266,12 @@ static_config:
   #   only opentelemetry data is supported, and the compression ratio is about 5:1~10:1.
   #   Turning on this feature will result in higher CPU consumption of deepflow-agent.
   external-agent-http-proxy-compressed: false
+
+  # Compress Integration Profile Data
+  # Note: Whether to compress the integrated profile data received by deepflow-agent. The compression
+  #   ratio is about 5:1~10:1. Turning on this feature will result in higher CPU consumption
+  #   of deepflow-agent.
+  external-agent-http-proxy-profile-compressed: true
 
   # Prometheus Extra Labels
   # Note: Support for getting extra labels from headers in http requests from remoteWrite.
@@ -1546,6 +1559,16 @@ static_config:
       # Default: ^java
       regex: ^java
 
+      # Memory profile report interval
+      # Default: 10s
+      # Note: Memory profiler will aggregate profile data by window and report according to this setting.
+      report-interval: 10s
+
+    preprocess:
+      # Stack Compression Switch
+      # Default: true
+      stack-compression: true
+
     # eBPF OOOR (Out-Of-Order-Reassembly) Cache Size
     # Default: 16. Range: [8, 1024]
     # Note: When `syscall-out-of-order-reassembly` is enabled, up to `syscall-out-of-order-cache-size` eBPF
@@ -1565,6 +1588,9 @@ static_config:
     #   - Dubbo
     #   - SofaRPC
     #   - FastCGI
+    #   - bRPC
+    #   - Tars
+    #   - SomeIP
     #   - MySQL
     #   - PostgreSQL
     #   - Oracle
@@ -1588,11 +1614,15 @@ static_config:
     # Supported Protocols:
     #   - HTTP
     #   - HTTP2 ## for both HTTP2 and gRPC
+    #   - Dubbo
     #   - SofaRPC
     #   - FastCGI
-    #   - Dubbo
+    #   - bRPC
+    #   - Tars
+    #   - SomeIP
     #   - MySQL
     #   - PostgreSQL
+    #   - Oracle
     #   - Redis
     #   - MongoDB
     #   - Kafka

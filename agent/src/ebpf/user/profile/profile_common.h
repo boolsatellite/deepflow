@@ -66,21 +66,6 @@ struct profiler_context {
 	 */
 	volatile u64 cpu_aggregation_flag;
 
-	/* 
-	 * To perform regular expression matching on process names,
-	 * the 'profiler_regex' is set using the 'set_profiler_regex()'
-	 * interface. Processes that successfully match the regular
-	 * expression are aggregated using the key:
-	 * `{pid + stime + u_stack_id + k_stack_id + tid + cpu}`.
-	 *
-	 * For processes that do not match, they are aggregated using the
-	 * key:
-	 * `<process name + u_stack_id + k_stack_id + cpu>`.
-	 */
-	regex_t profiler_regex;
-	bool regex_existed;
-	volatile u32 regex_lock;
-
 	/*
 	 * The profiler stop flag, with 1 indicating stop and
 	 * 0 indicating running status.
@@ -142,51 +127,29 @@ struct profiler_context {
 	 * (in seconds since system startup)
 	 */
 	u64 last_push_time;
+
+	// Passed into callback interface as first parameter
+	void *callback_ctx;
 };
-
-static inline void profile_regex_lock(struct profiler_context *c)
-{
-	while (__atomic_test_and_set(&c->regex_lock, __ATOMIC_ACQUIRE))
-		CLIB_PAUSE();
-}
-
-static inline void profile_regex_unlock(struct profiler_context *c)
-{
-	__atomic_clear(&c->regex_lock, __ATOMIC_RELEASE);
-}
 
 void process_bpf_stacktraces(struct profiler_context *ctx,
 			     struct bpf_tracer *t);
-int do_profiler_regex_config(const char *pattern, struct profiler_context *ctx);
 void set_bpf_run_enabled(struct bpf_tracer *t, struct profiler_context *ctx,
 			 u64 enable_flag);
-int profiler_context_init(struct profiler_context *ctx,
-			  const char *name,
-			  const char *tag,
-			  u8 type,
-			  bool enable_profiler,
+int profiler_context_init(struct profiler_context *ctx, const char *name,
+			  const char *tag, u8 type, bool enable_profiler,
 			  const char *state_map_name,
 			  const char *stack_map_name_a,
 			  const char *stack_map_name_b,
 			  const char *custom_stack_map_name_a,
 			  const char *custom_stack_map_name_b,
-			  bool only_matched,
-			  bool use_delta_time, u64 sample_period);
+			  bool only_matched, bool use_delta_time,
+			  u64 sample_period, void *callback_ctx);
 bool run_conditions_check(void);
 int java_libs_and_tools_install(void);
 void push_and_release_stack_trace_msg(struct profiler_context *ctx,
 				      stack_trace_msg_hash_t * h,
 				      bool is_force);
-/**
- * @brief **check_profiler_regex()** check if the process name matches
- * the regular expression.
- *
- * @param ctx Profiler context(runtime environment status & configuration)
- * address
- * @param name Process name to be checked
- * @return true successfully passed the check, false otherwise
- */
-bool check_profiler_regex(struct profiler_context *ctx, const char *name);
 // Check if the profiler is currently running.
 bool profiler_is_running(void);
 #endif /*DF_USER_PROFILE_COMMON_H */

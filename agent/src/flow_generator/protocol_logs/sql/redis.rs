@@ -250,7 +250,7 @@ impl L7ProtocolParserInterface for RedisLog {
         }
         self.last_is_on_blacklist = info.is_on_blacklist;
         if param.parse_log {
-            Ok(L7ParseResult::Single(L7ProtocolInfo::MemCachedInfo(info)))
+            Ok(L7ParseResult::Single(L7ProtocolInfo::RedisInfo(info)))
         } else {
             Ok(L7ParseResult::None)
         }
@@ -1008,7 +1008,7 @@ mod tests {
 
             let info = if let Ok(i) = redis.parse_payload(payload, param) {
                 match i.unwrap_single() {
-                    L7ProtocolInfo::MemCachedInfo(r) => r,
+                    L7ProtocolInfo::RedisInfo(r) => r,
                     _ => unreachable!(),
                 }
             } else {
